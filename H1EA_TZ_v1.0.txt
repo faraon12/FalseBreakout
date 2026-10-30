@@ -1,0 +1,242 @@
+// Project: H1EA
+// File: H1EA_TZ_v1.0.txt
+// Version: 1.0
+// Modified: 2026-10-29 15:00:13
+// Change: Первая версия ТЗ: точная копия логики индикатора H4_High_Low v5.16 в советник H1EA. Код не писать до закрытия вопросов Q1–Q5.
+// Full source (TZ): file:///Users/techchif/My%20Drive/trading/Trobot/H4/H1EA_TZ_v1.0.txt
+// Code source (база 1 в 1): file:///Users/techchif/My%20Drive/trading/Trobot/H4/H4.mq5
+// Prev TZ: нет (первая версия)
+
+================================================================================
+ТЗ — H1EA v1.0 (НЕ ГОТОВО К РЕАЛИЗАЦИИ)
+Советник MT5. Код не писать, пока не закрыты Q1–Q5.
+База: индикатор H4.mq5 / H4_High_Low v5.16. Поведение — копия 1 в 1.
+================================================================================
+
+0. СТАТУС
+--------------------------------------------------------------------------------
+Открытые дыры: Q1 (сделки), Q2 (дефолт CandleTimeframe), Q3 (префикс объектов), Q4 (папка/имена файлов), Q5 (тестер).
+Пока любой из Q1–Q5 не отвечен — реализацию не начинать.
+Зафиксированная часть ниже — дословный перенос логики H4.mq5 v5.16, кроме обязательной замены оболочки индикатор→советник (раздел 3).
+
+1. НАЗНАЧЕНИЕ
+--------------------------------------------------------------------------------
+1.1. Имя проекта / советника: H1EA.
+1.2. H1EA — это НЕ новый алгоритм. Это тот же H4_High_Low v5.16, запущенный как Expert Advisor.
+1.3. На графике советник рисует High/Low закрытых свечей таймфрейма из input CandleTimeframe, прямоугольники диапазона, подписи, таймер до закрытия текущей свечи этого ТФ.
+1.4. Сигналы те же: закрытие свечи CandleTimeframe; пробитие / ложное пробитие High/Low этой свечи по закрытию свечи ТЕКУЩЕГО графика.
+1.5. По умолчанию (пока не закрыт Q1): советник НЕ открывает, НЕ закрывает, НЕ модифицирует ордера. Нет лота, SL, TP, Magic, комментария сделки. Как у индикатора — только объекты + Print/Alert/Push.
+1.6. Если по Q1 ответ «торговать» — это уже другое ТЗ, текущий документ 1 в 1 не закрывает торговлю.
+
+2. ИСТОЧНИК ИСТИНЫ (ЧТО КОПИРОВАТЬ 1 В 1)
+--------------------------------------------------------------------------------
+Файл: H4.mq5
+Версия в шапке: 5.16
+Имя в шапке: H4_High_Low_v5.16_MT5.mq5
+Копировать без изменения смысла:
+- все input (имена, типы, группы, значения по умолчанию — кроме Q2);
+- все функции расчёта/отрисовки/сигналов/таймера;
+- все глобальные переменные состояния и их смысл;
+- условия, когда линии ставятся / не ставятся / удаляются;
+- приоритет сигналов пробития vs ложного пробития;
+- антидубли сигналов.
+Не копировать как есть (только оболочка, раздел 3):
+- #property indicator_chart_window
+- #property indicator_plots 0
+- OnCalculate → OnTick
+- IndicatorSetString(INDICATOR_SHORTNAME, ...) — у советника shortname индикатора нет; в журнал писать имя H1EA.
+
+3. ОБОЛОЧКА СОВЕТНИКА (ЕДИНСТВЕННЫЕ ДОПУСТИМЫЕ ОТЛИЧИЯ ОТ ИНДИКАТОРА)
+--------------------------------------------------------------------------------
+3.1. Тип: Expert Advisor MT5, не индикатор.
+3.2. Свойства:
+     #property strict
+     #property version "1.00"   (номер версии советника H1EA; десятичная часть обязательна)
+     #property description как в индикаторе по смыслу, с именем H1EA.
+     Свойств indicator_* не ставить.
+3.3. События:
+     OnInit     — та же инициализация состояния, UpdateRanges(), UpdateCountdown(), EventSetTimer(1).
+     OnDeinit   — EventKillTimer(); удалить все объекты с PREFIX; ChartRedraw(0).
+     OnTick     — CheckForNewRangeCandle(); CheckForNewChartCandle(); UpdateCountdown();
+     OnTimer    — UpdateCountdown(); CheckForNewRangeCandle(); CheckForNewChartCandle();
+     OnCalculate отсутствует.
+3.4. Почему OnTick+OnTimer оба: как в индикаторе OnCalculate+OnTimer. Таймер нужен, чтобы линии/сигналы/countdown жили, даже если по символу нет тиков. OnTick нужен, чтобы не ждать секунду таймера на живом рынке.
+3.5. График объектов: chart_id = 0, как сейчас. Не плодить объекты на других графиках.
+3.6. Символ и период графика: _Symbol и _Period текущего графика, как в индикаторе.
+3.7. История CandleTimeframe: те же вызовы iTime/iHigh/iLow/iClose/Bars(_Symbol, CandleTimeframe). Если баров мало — те же ранние return.
+3.8. Print при старте: аналог строки v5.16, но имя «H1EA v1.0», остальной текст смысла не менять.
+3.9. Файлы кода (после закрытия вопросов, не сейчас):
+     H1EA_1.0.mq5 — версионная копия исходника;
+     в шапке файла — ссылка на полный исходник.
+     Рабочее имя H1EA.mq5 — только если по Q4 подтвердят дубль/ярлык. В v1.0 это не решать за пользователя.
+
+4. INPUTS — КОПИЯ ИНДИКАТОРА v5.16
+--------------------------------------------------------------------------------
+Группа «=== Таймфрейм и отображение ===»
+- ENUM_TIMEFRAMES CandleTimeframe = PERIOD_H4;     // спорно: см. Q2. Пока в ТЗ как в исходнике.
+- int CandlesBack = 5;
+- int LineLengthBars = 6;
+- bool ShowLabels = true;
+- bool ShowRangeRectangles = true;
+
+Группа «=== Цвета и линии ===»
+- color HighLineColor = clrRed;
+- color LowLineColor = clrGreen;
+- color RangeFillColor = clrAliceBlue;
+- int LineWidth = 1;
+- ENUM_LINE_STYLE LineStyle = STYLE_SOLID;
+
+Группа «=== Сигналы ===»
+- bool EnableCandleCloseSignal = false;   // сигнал закрытия свечи ТФ из настроек
+- bool EnableBreakoutSignals = true;
+- bool EnableFalseBreakoutSignals = true;
+- bool EnablePopupAlerts = true;
+- bool EnablePushNotifications = false;
+
+Группа «=== Таймер закрытия свечи выбранного ТФ ===»
+- bool ShowCountdown = true;
+- ENUM_BASE_CORNER CountdownCorner = CORNER_RIGHT_UPPER;
+- int CountdownX = 20;
+- int CountdownY = 30;
+- color CountdownColor = clrBlack;
+- string CountdownFont = "Arial";
+- int CountdownFontSize = 12;
+
+Новых input не добавлять (нет лота, Magic, комментария, проскальзывания). Если Q1 = торговать — input торговли выносятся в следующее ТЗ, не в эту «копию 1 в 1».
+
+5. ПРЕФИКС ОБЪЕКТОВ
+--------------------------------------------------------------------------------
+В исходнике: string PREFIX = "MTFHL_V515_";
+Все объекты: PREFIX + HIGH_|LOW_|HTXT_|LTXT_|RECT_ + IntegerToString((long)candleTime)
+Таймер: PREFIX + "COUNTDOWN"
+Q3 не закрыт: оставлять 1 в 1 (конфликт с индикатором на том же графике) или сменить на уникальный, например "H1EA_V10_".
+Пока Q3 открыт — в код не идти.
+Правило очистки: удалять объекты с этим PREFIX, кроме COUNTDOWN, если суффикс времени не входит в последние count закрытых свечей CandleTimeframe.
+
+6. РАЗМЕТКА ЛИНИЙ (UpdateRanges) — 1 В 1 С ИНДИКАТОРОМ
+--------------------------------------------------------------------------------
+6.1. Источник OHLC: ТОЛЬКО CandleTimeframe из настроек. ТФ графика на геометрию линий не влияет.
+6.2. Рисуются ТОЛЬКО закрытые свечи: цикл shift = 1 … count. Формирующаяся свеча shift=0 НЕ рисуется.
+6.3. count = CandlesBack; если count < 1 → 1; если count > Bars(CandleTimeframe)-1 → Bars-1.
+6.4. Если Bars(_Symbol, CandleTimeframe) < 3 → выйти, линии этим вызовом не строить.
+6.5. periodSeconds = PeriodSeconds(CandleTimeframe); если <= 0 → 60.
+6.6. lengthBars = LineLengthBars; если < 1 → 1.
+6.7. lengthSeconds = periodSeconds * lengthBars.
+6.8. Для каждого shift:
+     candleTime = iTime(_Symbol, CandleTimeframe, shift);
+     если candleTime <= 0 → continue;
+     highPrice = iHigh(... shift); lowPrice = iLow(... shift);
+     если highPrice <= 0 ИЛИ lowPrice <= 0 ИЛИ highPrice < lowPrice → continue;
+     lineEnd = candleTime + lengthSeconds;
+     создать/обновить:
+       HIGH — OBJ_TREND горизонталь highPrice, time1=candleTime, time2=lineEnd, цвет HighLineColor;
+       LOW  — OBJ_TREND горизонталь lowPrice,  time1=candleTime, time2=lineEnd, цвет LowLineColor;
+       HTXT — OBJ_TEXT у (lineEnd, highPrice), текст GetTimeframeName(CandleTimeframe)+" High", если ShowLabels=true, иначе удалить;
+       LTXT — аналогично Low, если ShowLabels=true, иначе удалить;
+       RECT — OBJ_RECTANGLE (candleTime, highPrice) — (lineEnd, lowPrice), заливка RangeFillColor, фон, если ShowRangeRectangles=true, иначе удалить.
+6.9. Свойства линий 1 в 1: OBJPROP_WIDTH=LineWidth, OBJPROP_STYLE=LineStyle, OBJPROP_RAY_RIGHT=false, OBJPROP_RAY_LEFT=false, OBJPROP_SELECTABLE=false, OBJPROP_HIDDEN=true.
+6.10. Подписи: шрифт Arial 8, ANCHOR_LEFT, SELECTABLE=false, HIDDEN=true.
+6.11. Прямоугольник: FILL=true, BACK=true, STYLE_SOLID, WIDTH=1, SELECTABLE=false, HIDDEN=true.
+6.12. После цикла: RangesBuilt = built (true, если хотя бы одна свеча успешно нарисована).
+6.13. DeleteObjectsOutsideHistory(count): объекты с PREFIX, кроме COUNTDOWN, без суффикса времени одной из свечей shift=1..count — удалить.
+6.14. ChartRedraw(0).
+
+7. КОГДА ПЕРЕСТРАИВАТЬ ЛИНИИ
+--------------------------------------------------------------------------------
+7.1. OnInit: UpdateRanges() сразу. LastRangeBarTime = iTime(CandleTimeframe, 0). RangesBuilt = false до успешного UpdateRanges.
+7.2. CheckForNewRangeCandle:
+     currentRangeBarTime = iTime(_Symbol, CandleTimeframe, 0);
+     если <= 0 → return;
+     если LastRangeBarTime == 0 → запомнить и return (на старте повторный сигнал закрытия не слать этим путём);
+     если currentRangeBarTime != LastRangeBarTime → закрылась свеча CandleTimeframe: запомнить новое время, CheckClosedRangeCandleSignal(), UpdateRanges();
+     иначе если !RangesBuilt → UpdateRanges() ещё раз (история могла не загрузиться).
+7.3. Новая свеча ТЕКУЩЕГО графика линии НЕ перестраивает. Она только запускает проверку пробитий.
+
+8. ТАЙМЕР COUNTDOWN — 1 В 1
+--------------------------------------------------------------------------------
+8.1. Если ShowCountdown=false → удалить объект COUNTDOWN и выйти.
+8.2. candleOpen = iTime(_Symbol, CandleTimeframe, 0); если <= 0 → return.
+8.3. candleEnd = GetCandleEndTime(candleOpen, CandleTimeframe); если candleEnd <= candleOpen → return.
+8.4. GetCandleEndTime: для PERIOD_MN1 — первое число следующего месяца 00:00:00; иначе candleOpen + PeriodSeconds(tf); если seconds<=0 → 0.
+8.5. База отсчёта сбрасывается, если сменился candleOpen или CountdownBaseRemaining < 0. Тогда CalculateInitialRemaining(candleOpen, candleEnd) и CountdownBaseTick = GetTickCount64().
+8.6. CalculateInitialRemaining — каскад часов 1 в 1: TimeTradeServer, затем TimeCurrent, затем tick.time символа, затем TimeLocal; если ничего не попало в [candleOpen, candleEnd): для не-MN1 остаток через modulo PeriodSeconds; иначе candleEnd-now с нижней границей 0.
+8.7. remaining = CountdownBaseRemaining - (GetTickCount64()-CountdownBaseTick)/1000; если < 0 → 0; если не MN1 и remaining > periodSeconds → remaining = periodSeconds.
+8.8. Текст: при hours>0 "TF до закрытия: HH:MM:SS", иначе "TF до закрытия: MM:SS". TF = GetTimeframeName(CandleTimeframe).
+8.9. OBJ_LABEL, угол/смещение/цвет/шрифт/размер из input, SELECTABLE=false, HIDDEN=true.
+
+9. СИГНАЛ ЗАКРЫТИЯ СВЕЧИ CandleTimeframe — 1 В 1
+--------------------------------------------------------------------------------
+9.1. Вызывается только из CheckForNewRangeCandle при смене iTime(CandleTimeframe, 0).
+9.2. Если Bars(CandleTimeframe) < 3 → return.
+9.3. closedRangeBarTime = iTime(CandleTimeframe, 1); если <= 0 → return.
+9.4. Если closedRangeBarTime == LastRangeCloseSignalBar → return (антидубль).
+9.5. Сразу LastRangeCloseSignalBar = closedRangeBarTime.
+9.6. rangeClose = iClose(CandleTimeframe, 1); если <= 0 → return (отметка антидубля уже поставлена — как в исходнике).
+9.7. Текст сигнала, только если EnableCandleCloseSignal=true:
+     "{Symbol}: свеча {TF} закрылась. Close: {price}"
+9.8. OnInit: LastRangeCloseSignalBar = iTime(CandleTimeframe, 1) — уже закрытая на момент запуска свеча сигнал НЕ генерирует.
+
+10. ПРОБИТИЯ — 1 В 1
+--------------------------------------------------------------------------------
+10.1. Триггер: новая свеча ТЕКУЩЕГО графика (смена iTime(_Symbol, _Period, 0)). Не тик внутри свечи.
+10.2. Проверяется ЗАКРЫТАЯ свеча графика shift=1 vs High/Low ЗАКРЫТОЙ свечи CandleTimeframe shift=1.
+10.3. Guards: Bars(_Period)<3; closedChartBarTime<=0; антидубль LastChartCheckBar; OHLC графика >0; Bars(CandleTimeframe)<2; rangeCandleTime<=0 или range High/Low невалидны или High<Low → return.
+10.4. Смена опорной свечи CandleTimeframe (rangeCandleTime != SignalRangeCandleTime): сбросить HighSignalAlreadySent и LowSignalAlreadySent в false. По одной опорной свече — максимум один сигнал High и один сигнал Low.
+10.5. Формулы (закрытая свеча графика):
+     breakoutUp     = chartClose > rangeHigh
+     breakoutDown   = chartClose < rangeLow
+     falseBreakUp   = chartHigh > rangeHigh AND chartClose <= rangeHigh
+     falseBreakDown = chartLow  < rangeLow  AND chartClose >= rangeLow
+10.6. Одна закрытая свеча графика даёт только ОДИН сигнал (return после первого сработавшего).
+10.7. Приоритет: реальное пробитие выше ложного. Порядок проверок: breakoutUp, breakoutDown, falseBreakUp, falseBreakDown.
+10.8. Пробитие High уходит только если !HighSignalAlreadySent; затем флаг = true. Аналогично Low.
+10.9. EnableBreakoutSignals / EnableFalseBreakoutSignals глушат ОТПРАВКУ, но флаг already sent ставится всё равно (как в исходнике: if(условие && !flag) { flag=true; if(enable) SendSignal; return; }).
+10.10. Тексты сигналов — дословно как в H4.mq5 v5.16 (ПРОБИТИЕ HIGH/LOW и ЛОЖНОЕ ПРОБИТИЕ HIGH/LOW), подставляя имена ТФ графика и CandleTimeframe.
+10.11. OnInit: LastChartBarTime = iTime(_Period, 0); LastChartCheckBar = iTime(_Period, 1); SignalRangeCandleTime = iTime(CandleTimeframe, 1); флаги High/Low = false. На уже закрытой свече графика при старте сигнал не слать.
+
+11. ОТПРАВКА СИГНАЛА (SendSignal) — 1 В 1
+--------------------------------------------------------------------------------
+11.1. Всегда Print(message).
+11.2. Если EnablePopupAlerts → Alert(message).
+11.3. Если EnablePushNotifications → SendNotification(message), ошибку печать в журнал.
+11.4. Почта, Telegram, файлы, сделки — вне scope.
+
+12. GetTimeframeName — 1 В 1
+--------------------------------------------------------------------------------
+Те же case: M1..M30, H1..H12, D1, W1, MN1. Иначе EnumToString(tf).
+
+13. ВНЕ SCOPE (пока Q1 = нет сделок)
+--------------------------------------------------------------------------------
+- любые ордера, позиции, отложенные, Magic, лот, SL/TP, трейлинг;
+- торговля по пробитию / по закрытию H1/H4;
+- фильтр сессий, новостей, спреда;
+- другие ТФ кроме CandleTimeframe для линий и _Period для пробитий;
+- панели, кнопки, CSV, статистика;
+- смена логики разметки «чтобы красивее»;
+- правка исходного индикатора H4.mq5.
+
+14. ПРИЁМКА (после закрытия Q1–Q5 и написания кода)
+--------------------------------------------------------------------------------
+14.1. На одном символе при одинаковых input картинка линий/прямоугольников/подписей/таймера совпадает с H4.mq5 v5.16 (с поправкой на PREFIX, если Q3 сменит префикс).
+14.2. Линии только по закрытым свечам CandleTimeframe, длина = LineLengthBars * PeriodSeconds(CandleTimeframe).
+14.3. Перестроение линий только при закрытии свечи CandleTimeframe (и при старте / догрузке истории).
+14.4. Пробития только по закрытию свечи графика, формулы раздела 10, антидубли те же.
+14.5. Нет торговых операций, если Q1 = нет.
+14.6. Снятие советника удаляет только его объекты (его PREFIX).
+
+15. ОТКРЫТЫЕ ВОПРОСЫ (БЛОКИРУЮТ КОД)
+--------------------------------------------------------------------------------
+Q1. Сделки. Подтверждаем: H1EA не торгует, только разметка + алерты как индикатор?
+    Если «торговать» — напиши: по какому сигналу вход, каким объёмом, SL/TP, Magic, одна позиция или сетка, что делать если уже есть позиция. Это будет ТЗ v1.1+, не копия 1 в 1.
+
+Q2. Дефолт CandleTimeframe. В индикаторе PERIOD_H4. Имя советника H1EA. Что ставить в input по умолчанию: H4 как в исходнике или H1 по имени?
+
+Q3. PREFIX объектов. Оставить "MTFHL_V515_" (байт-в-байт с индикатором, но конфликт если оба на графике) или уникальный "H1EA_V10_"?
+
+Q4. Куда класть файлы. Вариант А: в текущую папку H4 (H1EA_TZ_v1.0.txt уже здесь; код потом H1EA_1.0.mq5). Вариант Б: новая папка Trobot/H1EA/.
+
+Q5. Strategy Tester. Нужна ли визуальная работа в тестере (линии+таймер+алерты в журнале) или только живой график, как пользуетесь индикатором?
+
+16. РЕШЕНИЯ, КОТОРЫЕ Я НЕ ВЫДУМЫВАЮ
+--------------------------------------------------------------------------------
+Не закладываю торговлю. Не меняю формулы пробитий. Не меняю длину линий. Не меняю CandlesBack=5 и LineLengthBars=6. Не переношу линии на формирующуюся свечу. Не привязываю перестроение к свече графика. Это всё уже зафиксировано исходником v5.16.
