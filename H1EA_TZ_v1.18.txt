@@ -1,0 +1,64 @@
+// Project: H1EA v1.18
+// File: H1EA_TZ_v1.18.txt
+// Version: 1.18
+// Modified: 2026-10-30 18:24:00
+// Change: Точечный журнал диагностики пропущенного FalseBreakHigh XAUUSD M1/M30 за 2026.09.01 01:00–01:10 без изменения торговой логики.
+// Full source (TZ): file:///Users/techchif/My%20Drive/trading/Trobot/H4/H1EA_TZ_v1.18.txt
+// Prev TZ: file:///Users/techchif/My%20Drive/trading/Trobot/H4/H1EA_TZ_v1.17.txt
+// Code source (не менять по этому заданию): file:///Users/techchif/My%20Drive/trading/Trobot/H4/H1EA_1.0.mq5
+// Base indicator (не менять): file:///Users/techchif/My%20Drive/trading/Trobot/H4/H4.mq5
+================================================================================
+ТЗ — H1EA v1.18
+Точечная диагностика пропущенного ложного пробоя High. Это ТЗ не разрешает менять формулы, порядок обработки, сигналы, стрелки или сделки.
+================================================================================
+1. ЦЕЛЬ
+Определить точную причину отсутствия стрелки FalseBreakHigh на XAUUSD, график M1, CandleTimeframe M30, около бара с High 4455.97 в терминальном времени 2026.09.01 01:00–01:10.
+Разделить пять возможных причин: проверка бара не вызвана; выбран другой уровень M30; сторона High уже занята; формула FalseBreakHigh ложна; стрелка создана и затем удалена либо создание объекта завершилось ошибкой.
+2. ОБЛАСТЬ ДЕБАГА
+Основной целевой интервал: от 2026.09.01 01:00:00 до 2026.09.01 01:10:59 включительно.
+Для проверки предыдущего бара и подтверждения следующими барами журналировать расширенный интервал от 2026.09.01 00:58:00 до 2026.09.01 01:12:59 включительно.
+Фильтр применяется по времени открытия M1-бара barTime. Диагностика должна работать одинаково при живом вызове ApplyClosedBar и при ScanFalseBreakoutHistory.
+Вне расширенного интервала диагностические строки не печатать.
+Если символ содержит брокерский суффикс, проверять начало имени символа "XAUUSD", а не строгое равенство всему _Symbol.
+3. ПОДТВЕРЖДЕНИЕ СБОРКИ И КОНТЕКСТА
+В OnInit одной строкой напечатать уникальную метку "H1EA DEBUG v1.18 BUILD 20261030-1824", фактические _Symbol, _Period, CandleTimeframe, _Digits и _Point.
+Если _Period не M1 или CandleTimeframe не M30, напечатать отдельную строку DBG_CONFIG_ERROR. Саму работу советника не останавливать.
+В начале и конце ScanFalseBreakoutHistory напечатать DBG_SCAN_BEGIN и DBG_SCAN_END с количеством доступных баров, oldest, временем самого старого и самого нового реально обработанного бара.
+4. СНИМОК НА ВХОДЕ APPLYClosedBar
+Для каждого бара расширенного интервала до изменения любого состояния напечатать одну строку DBG_ENTER со следующими полями: notify, shift, barTime, chartOpen, chartHigh, chartLow, chartClose, bar2Time, max2, min2, rangeCandleTime, rangeHigh, rangeLow, SignalRangeCandleTime, HighSignalAlreadySent, LowSignalAlreadySent, PendingHighBar, PendingHighTail, PendingHighRangeCandleTime, PendingHighRangeHigh, PendingLowBar, PendingLowTail, PendingLowRangeCandleTime и PendingLowRangeLow.
+Все цены печатать с _Digits. Все datetime печатать с датой и секундами.
+После смены rangeCandleTime и сброса AlreadySent напечатать DBG_RANGE_SWITCH со старым и новым временем диапазона и состоянием обоих флагов после сброса.
+5. ДИАГНОСТИКА ВИСЯЩЕГО HIGH
+Перед обработкой PendingHighBar напечатать DBG_PENDING_HIGH_CHECK: имя объекта, существует ли объект, совпадает ли bar2Time с PendingHighBar, highPendingCurrentRange, chartClose, сохранённый PendingHighRangeHigh, max2 и chartHigh.
+Для каждого исхода печатать ровно одну строку причины: DBG_PENDING_HIGH_DROP_BAR_MISMATCH, DBG_PENDING_HIGH_DROP_REAL_BREAK, DBG_PENDING_HIGH_DROP_HIGHER_MAX или DBG_PENDING_HIGH_CONFIRM.
+В строке удаления указать результат ObjectDelete и GetLastError. После очистки напечатать все четыре очищаемых поля PendingHigh.
+При подтверждении дополнительно напечатать, был ли установлен HighSignalAlreadySent. Если ожидающий пробой относится к старому диапазону, строка обязана показать, что флаг нового диапазона остался false.
+6. ДИАГНОСТИКА НАСТОЯЩЕГО И ЛОЖНОГО HIGH
+Непосредственно перед настоящими пробитиями напечатать DBG_HIGH_BOOL с breakoutUp, breakoutDown, chartClose, rangeHigh, rangeLow и обоими AlreadySent.
+Непосредственно перед новым поиском ложного High напечатать DBG_FALSE_HIGH_BOOL с skipHigh, HighSignalAlreadySent, max2, rangeHigh, chartHigh, chartClose, highByBar2, highByBar1 и итоговым условием входа.
+Если новый поиск пропущен, напечатать одну точную причину: DBG_FALSE_HIGH_SKIP_SKIP_FLAG, DBG_FALSE_HIGH_SKIP_SIDE_BUSY, DBG_FALSE_HIGH_SKIP_NO_BAR2_DATA или DBG_FALSE_HIGH_SKIP_FORMULA_FALSE.
+Если формула истинна, до создания стрелки напечатать DBG_FALSE_HIGH_FOUND с номером хвоста, barTime, ценой стрелки и именем объекта.
+7. ДИАГНОСТИКА ОБЪЕКТА СТРЕЛКИ
+Диагностическая версия PlaceFalseBreakArrow должна возвращать результат размещения, не меняя правила размещения.
+После ObjectCreate или ObjectMove напечатать DBG_ARROW_CREATE либо DBG_ARROW_MOVE: имя, результат операции, GetLastError, barTime и price.
+После установки свойств прочитать обратно и напечатать DBG_ARROW_STATE: ObjectFind, OBJPROP_TIME, OBJPROP_PRICE, OBJPROP_ARROWCODE, OBJPROP_ANCHOR, OBJPROP_COLOR, OBJPROP_WIDTH, OBJPROP_HIDDEN и OBJPROP_BACK.
+После возврата в ApplyClosedBar напечатать DBG_PENDING_HIGH_SET со всеми четырьмя сохранёнными полями PendingHigh.
+Любое последующее удаление этого имени обязано дать строку DBG_ARROW_DELETE с причиной, результатом ObjectDelete и GetLastError.
+8. СОСТОЯНИЕ НА ВЫХОДЕ
+Перед каждым return внутри ApplyClosedBar для бара расширенного интервала и в обычном конце функции напечатать DBG_EXIT с кодом пути выполнения, HighSignalAlreadySent, PendingHighBar, PendingHighTail, PendingHighRangeCandleTime, PendingHighRangeHigh и существованием объекта FBH для текущего barTime.
+Коды пути: INVALID_PRICE, REAL_HIGH, REAL_LOW, NO_BAR2, FALSE_HIGH_FOUND, FALSE_LOW_FOUND и NORMAL_END.
+9. ЧТО НЕ МЕНЯТЬ
+Не менять формулы highByBar2, highByBar1, lowByBar2 и lowByBar1.
+Не менять порядок обработки PendingHigh, PendingLow, настоящего High, настоящего Low, нового ложного High и нового ложного Low.
+Не менять правила подтверждения, отмены, флаги, уровни, имена объектов, стрелки, сигналы, поглощение, линии, таймер, историю 250 баров и отсутствие сделок.
+Диагностика не должна сама создавать дополнительные графические объекты.
+10. КРИТЕРИЙ РЕЗУЛЬТАТА
+По журналу для бара с High 4455.97 должна однозначно получиться одна цепочка.
+Нет DBG_ENTER — бар не попал в ApplyClosedBar или используется другая сборка.
+DBG_ENTER есть, но rangeHigh не равен ожидаемой линии — ошибка выбора свечи M30.
+DBG_FALSE_HIGH_SKIP_SIDE_BUSY — ошибочно занят HighSignalAlreadySent.
+DBG_FALSE_HIGH_SKIP_FORMULA_FALSE — журнал показывает конкретное ложное сравнение.
+DBG_FALSE_HIGH_FOUND и ошибка DBG_ARROW_CREATE/DBG_ARROW_MOVE — проблема создания объекта.
+DBG_FALSE_HIGH_FOUND и последующий DBG_ARROW_DELETE — стрелка была найдена, но затем удалена; строка удаления показывает причину и бар.
+DBG_ARROW_STATE существует до конца, но стрелка не видна — проблема свойств или отображения объекта, а не алгоритма поиска.
+================================================================================

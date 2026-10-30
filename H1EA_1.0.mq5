@@ -2,21 +2,27 @@
 //| Project: H1EA                                                    |
 //| File: H1EA_1.0.mq5                                               |
 //| Version: 1.0                                                     |
-//| Modified: 2026-10-29 19:16:20                                    |
-//| Change: Первая версия советника: копия H4_High_Low v5.16 как EA. PREFIX H1EA_V10_. Countdown в тестере по TimeCurrent. Сделок нет. |
+//| Modified: 2026-10-30 17:53:00                                    |
+//| Change: 1.0.10 — Состояние висящего ложного пробоя отделено от следующей свечи CandleTimeframe. |
 //| Journal: 1.0.1 2026-10-29 16:16:40 — Поглощение на закрытой свече графика. Бай 233 под low, селл 234 над high, отступ 3*_Point. Print/Alert/Push через SendSignal. Сделок нет. |
 //| Journal: 1.0.2 2026-10-29 17:19:01 — Поглощение: бар 2 додж (close==open) тоже считается. Лонг: close2<=open2 и прежние три сравнения бай. Селл: close2>=open2 и прежние три сравнения селл. Бар 1 додж не считается. |
 //| Journal: 1.0.3 2026-10-29 18:05:09 — Удалены пустые строки исходника. |
 //| Journal: 1.0.4 2026-10-29 19:16:20 — Ложное пробитие: хвост бара 2 и close бара 1. High 221 угол 90 зелёная якорь сверху high1+3*_Point. Low 222 угол 90 красная якорь снизу low1-3*_Point. Оба уровня — только High. Флаг общий с пробитием. |
+//| Journal: 1.0.5 2026-10-30 12:17:52 — Ложное пробитие: первая скобка хвост бара 2, вторая хвост бара 1. При загрузке стрелки на истории, 250 закрытых баров графика. OBJPROP_WIDTH 2. |
+//| Journal: 1.0.6 2026-10-30 14:46:48 — Удалены пустые строки исходника. |
+//| Journal: 1.0.7 2026-10-30 14:55:44 — Подтверждение ложного пробоя следующим баром. Неподтверждённая стрелка удаляется. Настоящее пробитие гасит висящий ложный. Сигнал и цены нового бара только на подтверждении. |
+//| Journal: 1.0.8 2026-10-30 15:24:21 — После отмены ложный пробой этой стороны ищется заново на том же закрытии. |
+//| Journal: 1.0.9 2026-10-30 16:11:21 — Линии CandleTimeframe начинаются от времени закрытия свечи. В подписи после пробела цена линии. |
+//| Journal: 1.0.10 2026-10-30 17:53:00 — Висящий ложный хранит время и уровень своей свечи CandleTimeframe. Подтверждение старого диапазона не занимает сторону нового; текущий бар затем проверяется по новому уровню. |
 //| Full source: file:///Users/techchif/My%20Drive/trading/Trobot/H4/H1EA_1.0.mq5 |
-//| TZ: file:///Users/techchif/My%20Drive/trading/Trobot/H4/H1EA_TZ_v1.8.txt |
+//| TZ: file:///Users/techchif/My%20Drive/trading/Trobot/H4/H1EA_TZ_v1.17.txt |
 //| Base: file:///Users/techchif/My%20Drive/trading/Trobot/H4/H4.mq5 |
 //+------------------------------------------------------------------+
 #property strict
 #property version   "1.00"
 #property description "H1EA: High/Low выбранного ТФ. Сигнал закрытия и перестроение линий - по ТФ из настроек, пробития - по закрытию текущего графика. Сделок нет. Поглощение — по закрытию текущего графика. Стрелка ложного пробития — на закрытой свече графика."
 input group "=== Таймфрейм и отображение ==="
-input ENUM_TIMEFRAMES CandleTimeframe = PERIOD_H4;
+input ENUM_TIMEFRAMES CandleTimeframe = PERIOD_H1;
 input int CandlesBack = 5;
 input int LineLengthBars = 6;
 input bool ShowLabels = true;
@@ -58,6 +64,14 @@ datetime CountdownBaseCandleOpen = 0;
 datetime SignalRangeCandleTime = 0;
 bool HighSignalAlreadySent = false;
 bool LowSignalAlreadySent = false;
+datetime PendingHighBar = 0;
+int PendingHighTail = 0;
+datetime PendingHighRangeCandleTime = 0;
+double PendingHighRangeHigh = 0.0;
+datetime PendingLowBar = 0;
+int PendingLowTail = 0;
+datetime PendingLowRangeCandleTime = 0;
+double PendingLowRangeLow = 0.0;
 //--------------------------------------------------------------
 // Название таймфрейма
 //--------------------------------------------------------------
@@ -356,24 +370,31 @@ void UpdateRanges()
       double lowPrice  = iLow(_Symbol, CandleTimeframe, shift);
       if(highPrice <= 0 || lowPrice <= 0 || highPrice < lowPrice)
          continue;
-      datetime lineEnd = candleTime + lengthSeconds;
+      datetime candleClose = iTime(_Symbol, CandleTimeframe, shift - 1);
+      if(candleClose <= candleTime)
+         continue;
+      datetime lineEnd = candleClose + lengthSeconds;
+      datetime boxEnd = candleTime + lengthSeconds;
       string suffix = IntegerToString((long)candleTime);
+      string tfName = GetTimeframeName(CandleTimeframe);
+      string highText = tfName + " High " + DoubleToString(highPrice, _Digits);
+      string lowText = tfName + " Low " + DoubleToString(lowPrice, _Digits);
       CreateOrUpdateTrendLine(PREFIX + "HIGH_" + suffix,
-                              candleTime, lineEnd,
+                              candleClose, lineEnd,
                               highPrice, HighLineColor);
       CreateOrUpdateTrendLine(PREFIX + "LOW_" + suffix,
-                              candleTime, lineEnd,
+                              candleClose, lineEnd,
                               lowPrice, LowLineColor);
       CreateOrUpdateLabel(PREFIX + "HTXT_" + suffix,
                           lineEnd, highPrice,
-                          GetTimeframeName(CandleTimeframe) + " High",
+                          highText,
                           HighLineColor);
       CreateOrUpdateLabel(PREFIX + "LTXT_" + suffix,
                           lineEnd, lowPrice,
-                          GetTimeframeName(CandleTimeframe) + " Low",
+                          lowText,
                           LowLineColor);
       CreateOrUpdateRectangle(PREFIX + "RECT_" + suffix,
-                              candleTime, lineEnd,
+                              candleTime, boxEnd,
                               highPrice, lowPrice);
       built = true;
    }
@@ -545,39 +566,30 @@ void PlaceFalseBreakArrow(const string name, const datetime barTime, const doubl
    ObjectSetDouble(0, name, OBJPROP_ANGLE, 90.0);
    ObjectSetInteger(0, name, OBJPROP_ANCHOR, anchor);
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, 4);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
    ObjectSetInteger(0, name, OBJPROP_BACK, false);
-   ChartRedraw(0);
 }
 //--------------------------------------------------------------
-// Пробития по закрытой свече текущего графика
-// (сравнение с High/Low последней закрытой свечи ТФ из настроек)
+// Снять стрелку ложного пробоя. Нет объекта — ложь.
 //--------------------------------------------------------------
-void CheckClosedChartCandleSignals()
+bool DropFalseArrow(const string name)
 {
-   if(Bars(_Symbol, _Period) < 3)
-      return;
-   datetime closedChartBarTime = iTime(_Symbol, _Period, 1);
-   if(closedChartBarTime <= 0)
-      return;
-   if(closedChartBarTime == LastChartCheckBar)
-      return;
-   LastChartCheckBar = closedChartBarTime;
-   double chartHigh  = iHigh(_Symbol, _Period, 1);
-   double chartLow   = iLow(_Symbol, _Period, 1);
-   double chartClose = iClose(_Symbol, _Period, 1);
-   if(chartHigh <= 0 || chartLow <= 0 || chartClose <= 0)
-      return;
-   string chartTF = GetTimeframeName((ENUM_TIMEFRAMES)_Period);
-   string rangeTF = GetTimeframeName(CandleTimeframe);
-   if(Bars(_Symbol, CandleTimeframe) < 2)
-      return;
-   datetime rangeCandleTime = iTime(_Symbol, CandleTimeframe, 1);
-   double rangeHigh = iHigh(_Symbol, CandleTimeframe, 1);
-   double rangeLow  = iLow(_Symbol, CandleTimeframe, 1);
-   if(rangeCandleTime <= 0 ||
-      rangeHigh <= 0 || rangeLow <= 0 || rangeHigh < rangeLow)
+   if(ObjectFind(0, name) < 0)
+      return false;
+   return ObjectDelete(0, name);
+}
+//--------------------------------------------------------------
+// Бар графика shift против свечи уровня. notify — текст живого бара.
+// Ложный пробой: стрелка на находке, сигнал только после подтверждения следующим баром.
+//--------------------------------------------------------------
+void ApplyClosedBar(const int shift, const datetime barTime, const datetime rangeCandleTime, const double rangeHigh, const double rangeLow, const bool notify)
+{
+   double chartHigh = iHigh(_Symbol, _Period, shift);
+   double chartLow = iLow(_Symbol, _Period, shift);
+   double chartClose = iClose(_Symbol, _Period, shift);
+   if(chartHigh <= 0.0 || chartLow <= 0.0 || chartClose <= 0.0)
       return;
    if(rangeCandleTime != SignalRangeCandleTime)
    {
@@ -585,67 +597,238 @@ void CheckClosedChartCandleSignals()
       HighSignalAlreadySent = false;
       LowSignalAlreadySent = false;
    }
-   bool breakoutUp = (chartClose > rangeHigh);
-   bool breakoutDown = (chartClose < rangeLow);
-   if(breakoutUp && !HighSignalAlreadySent)
+   string rangeTF = "";
+   string chartTF = "";
+   if(notify)
+   {
+      rangeTF = GetTimeframeName(CandleTimeframe);
+      chartTF = GetTimeframeName((ENUM_TIMEFRAMES)_Period);
+   }
+   bool paint = false;
+   bool skipHigh = false;
+   bool skipLow = false;
+   datetime bar2Time = iTime(_Symbol, _Period, shift + 1);
+   double max2 = 0.0;
+   double min2 = 0.0;
+   if(bar2Time > 0)
+   {
+      max2 = iHigh(_Symbol, _Period, shift + 1);
+      min2 = iLow(_Symbol, _Period, shift + 1);
+   }
+   if(PendingHighBar > 0)
+   {
+      string highName = PREFIX + "FBH_" + IntegerToString((long)PendingHighBar);
+      bool highPendingCurrentRange = (PendingHighRangeCandleTime == rangeCandleTime);
+      if(bar2Time != PendingHighBar || max2 <= 0.0)
+      {
+         if(DropFalseArrow(highName))
+            paint = true;
+         PendingHighBar = 0;
+         PendingHighTail = 0;
+         PendingHighRangeCandleTime = 0;
+         PendingHighRangeHigh = 0.0;
+         skipHigh = true;
+      }
+      else if(chartClose > PendingHighRangeHigh)
+      {
+         if(DropFalseArrow(highName))
+            paint = true;
+         PendingHighBar = 0;
+         PendingHighTail = 0;
+         PendingHighRangeCandleTime = 0;
+         PendingHighRangeHigh = 0.0;
+      }
+      else if(max2 < chartHigh)
+      {
+         if(DropFalseArrow(highName))
+            paint = true;
+         PendingHighBar = 0;
+         PendingHighTail = 0;
+         PendingHighRangeCandleTime = 0;
+         PendingHighRangeHigh = 0.0;
+      }
+      else
+      {
+         int highTail = PendingHighTail;
+         if(highPendingCurrentRange)
+            HighSignalAlreadySent = true;
+         PendingHighBar = 0;
+         PendingHighTail = 0;
+         PendingHighRangeCandleTime = 0;
+         PendingHighRangeHigh = 0.0;
+         if(notify && EnableFalseBreakoutSignals)
+            SendSignal(StringFormat("%s: ЛОЖНОЕ ПРОБИТИЕ HIGH %s. Хвост бара %d %s задел High %s, бар 1 закрылся ниже. Close: %.*f; High: %.*f", _Symbol, rangeTF, highTail, chartTF, rangeTF, _Digits, chartClose, _Digits, chartHigh));
+      }
+   }
+   if(PendingLowBar > 0)
+   {
+      string lowName = PREFIX + "FBL_" + IntegerToString((long)PendingLowBar);
+      bool lowPendingCurrentRange = (PendingLowRangeCandleTime == rangeCandleTime);
+      if(bar2Time != PendingLowBar || min2 <= 0.0)
+      {
+         if(DropFalseArrow(lowName))
+            paint = true;
+         PendingLowBar = 0;
+         PendingLowTail = 0;
+         PendingLowRangeCandleTime = 0;
+         PendingLowRangeLow = 0.0;
+         skipLow = true;
+      }
+      else if(chartClose < PendingLowRangeLow)
+      {
+         if(DropFalseArrow(lowName))
+            paint = true;
+         PendingLowBar = 0;
+         PendingLowTail = 0;
+         PendingLowRangeCandleTime = 0;
+         PendingLowRangeLow = 0.0;
+      }
+      else if(min2 > chartLow)
+      {
+         if(DropFalseArrow(lowName))
+            paint = true;
+         PendingLowBar = 0;
+         PendingLowTail = 0;
+         PendingLowRangeCandleTime = 0;
+         PendingLowRangeLow = 0.0;
+      }
+      else
+      {
+         int lowTail = PendingLowTail;
+         if(lowPendingCurrentRange)
+            LowSignalAlreadySent = true;
+         PendingLowBar = 0;
+         PendingLowTail = 0;
+         PendingLowRangeCandleTime = 0;
+         PendingLowRangeLow = 0.0;
+         if(notify && EnableFalseBreakoutSignals)
+            SendSignal(StringFormat("%s: ЛОЖНОЕ ПРОБИТИЕ LOW %s. Хвост бара %d %s задел Low %s, бар 1 закрылся выше. Close: %.*f; Low: %.*f", _Symbol, rangeTF, lowTail, chartTF, rangeTF, _Digits, chartClose, _Digits, chartLow));
+      }
+   }
+   if(chartClose > rangeHigh && !HighSignalAlreadySent)
    {
       HighSignalAlreadySent = true;
-      if(EnableBreakoutSignals)
-      {
-         SendSignal(StringFormat(
-            "%s: ПРОБИТИЕ HIGH %s. Свеча %s впервые закрылась выше High предыдущей %s. Close: %.*f; High: %.*f",
-            _Symbol, rangeTF, chartTF, rangeTF,
-            _Digits, chartClose, _Digits, rangeHigh));
-      }
+      if(notify && EnableBreakoutSignals)
+         SendSignal(StringFormat("%s: ПРОБИТИЕ HIGH %s. Свеча %s впервые закрылась выше High предыдущей %s. Close: %.*f; High: %.*f", _Symbol, rangeTF, chartTF, rangeTF, _Digits, chartClose, _Digits, rangeHigh));
+      if(notify && paint)
+         ChartRedraw(0);
       return;
    }
-   if(breakoutDown && !LowSignalAlreadySent)
+   if(chartClose < rangeLow && !LowSignalAlreadySent)
    {
       LowSignalAlreadySent = true;
-      if(EnableBreakoutSignals)
-      {
-         SendSignal(StringFormat(
-            "%s: ПРОБИТИЕ LOW %s. Свеча %s впервые закрылась ниже Low предыдущей %s. Close: %.*f; Low: %.*f",
-            _Symbol, rangeTF, chartTF, rangeTF,
-            _Digits, chartClose, _Digits, rangeLow));
-      }
+      if(notify && EnableBreakoutSignals)
+         SendSignal(StringFormat("%s: ПРОБИТИЕ LOW %s. Свеча %s впервые закрылась ниже Low предыдущей %s. Close: %.*f; Low: %.*f", _Symbol, rangeTF, chartTF, rangeTF, _Digits, chartClose, _Digits, rangeLow));
+      if(notify && paint)
+         ChartRedraw(0);
       return;
    }
-   if(HighSignalAlreadySent && LowSignalAlreadySent)
-      return;
-   double high2 = iHigh(_Symbol, _Period, 2);
-   double low2 = iLow(_Symbol, _Period, 2);
-   if(high2 <= 0.0 || low2 <= 0.0)
-      return;
-   double arrowPrice = 0.0;
-   if(!HighSignalAlreadySent && high2 >= rangeHigh && chartClose < rangeHigh)
+   if(max2 <= 0.0 || min2 <= 0.0)
    {
-      HighSignalAlreadySent = true;
+      if(notify && paint)
+         ChartRedraw(0);
+      return;
+   }
+   bool highByBar2 = (max2 >= rangeHigh && chartClose < rangeHigh);
+   bool highByBar1 = (max2 < rangeHigh && chartHigh >= rangeHigh && chartClose < rangeHigh);
+   if(!skipHigh && !HighSignalAlreadySent && (highByBar2 || highByBar1))
+   {
       if(EnableFalseBreakoutSignals)
       {
-         arrowPrice = chartHigh + 3.0 * _Point;
-         PlaceFalseBreakArrow(PREFIX + "FBH_" + IntegerToString((long)closedChartBarTime), closedChartBarTime, arrowPrice, 221, ANCHOR_TOP, clrGreen);
-         SendSignal(StringFormat(
-            "%s: ЛОЖНОЕ ПРОБИТИЕ HIGH %s. Хвост бара 2 %s задел High %s, бар 1 закрылся ниже. Close: %.*f; High: %.*f",
-            _Symbol, rangeTF, chartTF, rangeTF,
-            _Digits, chartClose, _Digits, rangeHigh));
+         PlaceFalseBreakArrow(PREFIX + "FBH_" + IntegerToString((long)barTime), barTime, chartHigh + 3.0 * _Point, 222, ANCHOR_BOTTOM, clrRed);
+         paint = true;
       }
+      PendingHighBar = barTime;
+      PendingHighTail = 1;
+      PendingHighRangeCandleTime = rangeCandleTime;
+      PendingHighRangeHigh = rangeHigh;
+      if(highByBar2)
+         PendingHighTail = 2;
+      if(notify && paint)
+         ChartRedraw(0);
       return;
    }
-   if(!LowSignalAlreadySent && low2 <= rangeLow && chartClose > rangeLow)
+   bool lowByBar2 = (min2 <= rangeLow && chartClose > rangeLow);
+   bool lowByBar1 = (min2 > rangeLow && chartLow <= rangeLow && chartClose > rangeLow);
+   if(!skipLow && !LowSignalAlreadySent && (lowByBar2 || lowByBar1))
    {
-      LowSignalAlreadySent = true;
       if(EnableFalseBreakoutSignals)
       {
-         arrowPrice = chartLow - 3.0 * _Point;
-         PlaceFalseBreakArrow(PREFIX + "FBL_" + IntegerToString((long)closedChartBarTime), closedChartBarTime, arrowPrice, 222, ANCHOR_BOTTOM, clrRed);
-         SendSignal(StringFormat(
-            "%s: ЛОЖНОЕ ПРОБИТИЕ LOW %s. Хвост бара 2 %s задел Low %s, бар 1 закрылся выше. Close: %.*f; Low: %.*f",
-            _Symbol, rangeTF, chartTF, rangeTF,
-            _Digits, chartClose, _Digits, rangeLow));
+         PlaceFalseBreakArrow(PREFIX + "FBL_" + IntegerToString((long)barTime), barTime, chartLow - 3.0 * _Point, 221, ANCHOR_TOP, clrGreen);
+         paint = true;
       }
-      return;
+      PendingLowBar = barTime;
+      PendingLowTail = 1;
+      PendingLowRangeCandleTime = rangeCandleTime;
+      PendingLowRangeLow = rangeLow;
+      if(lowByBar2)
+         PendingLowTail = 2;
    }
+   if(notify && paint)
+      ChartRedraw(0);
+}
+//--------------------------------------------------------------
+// Пробития по закрытой свече текущего графика
+//--------------------------------------------------------------
+void CheckClosedChartCandleSignals()
+{
+   if(Bars(_Symbol, _Period) < 3)
+      return;
+   datetime barTime = iTime(_Symbol, _Period, 1);
+   if(barTime <= 0)
+      return;
+   if(barTime == LastChartCheckBar)
+      return;
+   LastChartCheckBar = barTime;
+   if(Bars(_Symbol, CandleTimeframe) < 2)
+      return;
+   datetime rangeCandleTime = iTime(_Symbol, CandleTimeframe, 1);
+   double rangeHigh = iHigh(_Symbol, CandleTimeframe, 1);
+   double rangeLow = iLow(_Symbol, CandleTimeframe, 1);
+   if(rangeCandleTime <= 0 || rangeHigh <= 0.0 || rangeLow <= 0.0 || rangeHigh < rangeLow)
+      return;
+   ApplyClosedBar(1, barTime, rangeCandleTime, rangeHigh, rangeLow, true);
+}
+//--------------------------------------------------------------
+// Ложные пробои на истории при загрузке. Текст не шлётся.
+//--------------------------------------------------------------
+void ScanFalseBreakoutHistory()
+{
+   PendingHighBar = 0;
+   PendingHighTail = 0;
+   PendingHighRangeCandleTime = 0;
+   PendingHighRangeHigh = 0.0;
+   PendingLowBar = 0;
+   PendingLowTail = 0;
+   PendingLowRangeCandleTime = 0;
+   PendingLowRangeLow = 0.0;
+   int historyLimit = 250;
+   int available = Bars(_Symbol, _Period);
+   int oldest = available - 2;
+   if(oldest > historyLimit)
+      oldest = historyLimit;
+   if(oldest < 1)
+      return;
+   for(int shift = oldest; shift >= 1; shift--)
+   {
+      datetime barTime = iTime(_Symbol, _Period, shift);
+      if(barTime <= 0)
+         continue;
+      datetime closeTime = iTime(_Symbol, _Period, shift - 1);
+      if(closeTime <= 0)
+         continue;
+      int holding = iBarShift(_Symbol, CandleTimeframe, closeTime, false);
+      if(holding < 0)
+         continue;
+      int closedShift = holding + 1;
+      datetime rangeCandleTime = iTime(_Symbol, CandleTimeframe, closedShift);
+      double rangeHigh = iHigh(_Symbol, CandleTimeframe, closedShift);
+      double rangeLow = iLow(_Symbol, CandleTimeframe, closedShift);
+      if(rangeCandleTime <= 0 || rangeHigh <= 0.0 || rangeLow <= 0.0 || rangeHigh < rangeLow)
+         continue;
+      ApplyClosedBar(shift, barTime, rangeCandleTime, rangeHigh, rangeLow, false);
+   }
+   ChartRedraw(0);
 }
 //--------------------------------------------------------------
 // Поглощение: две закрытые свечи графика. Бар 1 = shift 1, бар 2 = shift 2.
@@ -764,6 +947,7 @@ int OnInit()
    LowSignalAlreadySent = false;
    UpdateRanges();
    UpdateCountdown();
+   ScanFalseBreakoutHistory();
    ResetLastError();
    if(!EventSetTimer(1))
    {

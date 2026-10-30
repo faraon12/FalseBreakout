@@ -1,0 +1,83 @@
+// Project: H1EA v1.11
+// File: H1EA_TZ_v1.11.txt
+// Version: 1.11
+// Modified: 2026-10-30 11:56:55
+// Change: Старые условия ложного пробития удалены. Вместо них FalseBreakHigh и FalseBreakLow: старая пара или хвост бара 1, если бар 2 уровень не пробил. Close строго обратно. Код не писать, пока не закрыт Q1 про текст.
+// Full source (TZ): file:///Users/techchif/My%20Drive/trading/Trobot/H4/H1EA_TZ_v1.11.txt
+// Prev TZ: file:///Users/techchif/My%20Drive/trading/Trobot/H4/H1EA_TZ_v1.10.txt
+// Code source (не править, пока нет задания «пиши код»): file:///Users/techchif/My%20Drive/trading/Trobot/H4/H1EA_1.0.mq5
+// Base indicator (не менять): file:///Users/techchif/My%20Drive/trading/Trobot/H4/H4.mq5
+
+================================================================================
+ТЗ — H1EA v1.11 (ФОРМУЛА ЗАКРЫТА, ТЕКСТ НЕТ)
+Ложное пробитие в H1EA_1.0.mq5 заменить целиком. Формулы v1.8 и три сравнения из v1.10 в код не переносить.
+Код не писать, пока не закрыт Q1. После закрытия — только по заданию «пиши код по H1EA_TZ_v1.11». H4.mq5 не менять.
+================================================================================
+
+1. ВСЕ УСЛОВИЯ ВМЕСТЕ
+--------------------------------------------------------------------------------
+Бар 1 — shift 1 графика _Period. Бар 2 — shift 2 того же графика.
+max1 — high бара 1, уже прочитанный chartHigh. max2 — high бара 2, high2. min1 — low бара 1, chartLow. min2 — low бара 2, low2. close1 — chartClose.
+rangeHigh и rangeLow — High и Low последней закрытой свечи CandleTimeframe, shift 1.
+Повторно iHigh и iLow не читать. Новые имена max1, max2, min1, min2 в коде не заводить: это те же chartHigh, high2, chartLow, low2.
+
+Настоящее High: close1 > rangeHigh
+Настоящее Low: close1 < rangeLow
+
+FalseBreakHigh:
+(max2 >= rangeHigh and close1 < rangeHigh) or (max2 < rangeHigh and max1 >= rangeHigh and close1 < rangeHigh)
+
+FalseBreakLow:
+(min2 <= rangeLow and close1 > rangeLow) or (min2 > rangeLow and min1 <= rangeLow and close1 > rangeLow)
+
+Та же формула одной строкой, результат тот же. В код ставить её или запись с or выше. Вторую проверку рядом не добавлять.
+FalseBreakHigh: close1 < rangeHigh and (max1 >= rangeHigh or max2 >= rangeHigh)
+FalseBreakLow: close1 > rangeLow and (min1 <= rangeLow or min2 <= rangeLow)
+
+2. ЧТО УДАЛИТЬ
+--------------------------------------------------------------------------------
+Из CheckClosedChartCandleSignals убрать пару v1.8: high2 >= rangeHigh и chartClose < rangeHigh. И пару low2 <= rangeLow и chartClose > rangeLow.
+Три сравнения из H1EA_TZ_v1.10 в код не ставить. Там у Low оба минимума были в одну сторону, этой формулы больше нет.
+На месте удалённых пар одна проверка FalseBreakHigh и одна проверка FalseBreakLow. Два if на одну сторону не делать: ветки or дают один сигнал, один флаг, одну стрелку, один SendSignal, один return.
+
+3. ПОРЯДОК
+--------------------------------------------------------------------------------
+Сначала настоящее High, потом настоящее Low, потом FalseBreakHigh, потом FalseBreakLow. Return после настоящего пробития оставить.
+FalseBreakHigh при истинной формуле и HighSignalAlreadySent == false. Сразу флаг true, затем тумблер, стрелка, SendSignal, return.
+FalseBreakLow так же со своим флагом. Обе формулы истинны на одном вызове — выполняется только High. LowSignalAlreadySent на этом вызове не ставить.
+high2 <= 0 или low2 <= 0 — обе ложные ветки пропустить. Настоящее пробитие к этому моменту уже вышло своим return.
+Bars графика меньше 3 — выход в начале функции, как сейчас. Shift 0 не читать.
+
+4. ГРАНИЦЫ
+--------------------------------------------------------------------------------
+max2 > rangeHigh и close1 < rangeHigh: FalseBreakHigh, max1 не смотреть.
+max2 равен rangeHigh и close1 < rangeHigh: FalseBreakHigh. Равенство max2 входит в первую скобку, во вторую не входит.
+max2 < rangeHigh и max1 > rangeHigh и close1 < rangeHigh: FalseBreakHigh. Это бар с линии 4011.39 и максимумом бара 1 = 4011.54, если close1 ниже 4011.39 и max2 ниже 4011.39.
+max2 < rangeHigh и max1 равен rangeHigh и close1 < rangeHigh: FalseBreakHigh.
+max2 < rangeHigh и max1 < rangeHigh: FalseBreakHigh нет.
+close1 равен rangeHigh: настоящего High нет и FalseBreakHigh нет.
+close1 > rangeHigh: настоящее High, до FalseBreakHigh выполнение не доходит.
+min2 < rangeLow и close1 > rangeLow: FalseBreakLow, min1 не смотреть.
+min2 равен rangeLow и close1 > rangeLow: FalseBreakLow.
+min2 > rangeLow и min1 < rangeLow и close1 > rangeLow: FalseBreakLow.
+min2 > rangeLow и min1 равен rangeLow и close1 > rangeLow: FalseBreakLow.
+min2 > rangeLow и min1 > rangeLow: FalseBreakLow нет.
+close1 равен rangeLow: настоящего Low нет и FalseBreakLow нет.
+close1 < rangeLow: настоящее Low, до FalseBreakLow выполнение не доходит.
+
+5. СТРЕЛКА, ФЛАГ, ТУМБЛЕР
+--------------------------------------------------------------------------------
+Стрелка High: код 221, угол 90.0, clrGreen, ANCHOR_TOP, цена chartHigh + 3.0 * _Point, время бара 1. Имя PREFIX + "FBH_" + IntegerToString((long)время бара 1).
+Стрелка Low: код 222, угол 90.0, clrRed, ANCHOR_BOTTOM, цена chartLow - 3.0 * _Point, время бара 1. Имя PREFIX + "FBL_" + IntegerToString((long)время бара 1).
+Флаг стороны ставится до EnableFalseBreakoutSignals. Тумблер false: стрелки нет, SendSignal нет, сторона занята, return есть.
+Остальная механика стрелки как в v1.8: один OBJ_ARROW, ObjectFind, Create или Move, ChartRedraw, пропуск FBH_ и FBL_ в DeleteObjectsOutsideHistory.
+
+6. ОТКРЫТЫЙ ВОПРОС
+--------------------------------------------------------------------------------
+Q1. Текст SendSignal. Старая строка «Хвост бара 2 задел» для второй скобки ложна: там уровень задел хвост бара 1, а max2 или min2 уровень не пробил.
+Ветка A. Один текст на обе скобки. High: "%s: ЛОЖНОЕ ПРОБИТИЕ HIGH %s. High %s задет, свеча %s закрылась ниже. Close: %.*f; High: %.*f". Аргументы: _Symbol, имя CandleTimeframe, имя CandleTimeframe, имя графика, _Digits, close1, _Digits, rangeHigh. Low: "%s: ЛОЖНОЕ ПРОБИТИЕ LOW %s. Low %s задет, свеча %s закрылась выше. Close: %.*f; Low: %.*f". Аргументы те же, цены close1 и rangeLow.
+Ветка B. Два текста. Первая скобка High говорит про хвост бара 2. Вторая скобка High говорит про хвост бара 1. Low так же: первая скобка про минимум бара 2, вторая про минимум бара 1.
+
+7. ВНЕ SCOPE
+--------------------------------------------------------------------------------
+Правка настоящего пробития. Поглощение. Линии и таймер. Сделки. Новые input. H4.mq5. История задним числом. Вторая стрелка, когда истинны обе формулы.
